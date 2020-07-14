@@ -229,6 +229,10 @@ class MockPlexClient:
         """Mock the version attribute."""
         return "1.0"
 
+    def proxyThroughServer(self, value=True, server=None):
+        """Mock the proxyThroughServer method."""
+        pass
+
     def playMedia(self, item):
         """Mock the playMedia method."""
         pass
@@ -248,6 +252,11 @@ class MockPlexSession:
     def duration(self):
         """Mock the duration attribute."""
         return 10000000
+
+    @property
+    def librarySectionID(self):
+        """Mock the librarySectionID attribute."""
+        return 1
 
     @property
     def ratingKey(self):
