@@ -115,7 +115,7 @@ LIGHT_TURN_ON_SCHEMA = {
     vol.Exclusive(ATTR_COLOR_TEMP, COLOR_GROUP): vol.All(
         vol.Coerce(int), vol.Range(min=1)
     ),
-    vol.Exclusive(ATTR_KELVIN, COLOR_GROUP): vol.All(vol.Coerce(int), vol.Range(min=0)),
+    vol.Exclusive(ATTR_KELVIN, COLOR_GROUP): cv.positive_int,
     ATTR_WHITE_VALUE: vol.All(vol.Coerce(int), vol.Range(min=0, max=255)),
     ATTR_FLASH: VALID_FLASH,
     ATTR_EFFECT: cv.string,
@@ -123,7 +123,12 @@ LIGHT_TURN_ON_SCHEMA = {
 
 
 PROFILE_SCHEMA = vol.Schema(
-    vol.ExactSequence((str, cv.small_float, cv.small_float, cv.byte))
+    vol.Any(
+        vol.ExactSequence((str, cv.small_float, cv.small_float, cv.byte)),
+        vol.ExactSequence(
+            (str, cv.small_float, cv.small_float, cv.byte, cv.positive_int)
+        ),
+    )
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -141,6 +146,8 @@ def preprocess_turn_on_alternatives(params):
     if profile is not None:
         params.setdefault(ATTR_XY_COLOR, profile[:2])
         params.setdefault(ATTR_BRIGHTNESS, profile[2])
+        if len(profile) > 3:
+            params.setdefault(ATTR_TRANSITION, profile[3])
 
     color_name = params.pop(ATTR_COLOR_NAME, None)
     if color_name is not None:
@@ -313,8 +320,22 @@ class Profiles:
 
                     try:
                         for rec in reader:
-                            profile, color_x, color_y, brightness = PROFILE_SCHEMA(rec)
-                            profiles[profile] = (color_x, color_y, brightness)
+                            (
+                                profile,
+                                color_x,
+                                color_y,
+                                brightness,
+                                *transition,
+                            ) = PROFILE_SCHEMA(rec)
+
+                            transition = transition[0] if transition else 0
+
+                            profiles[profile] = (
+                                color_x,
+                                color_y,
+                                brightness,
+                                transition,
+                            )
                     except vol.MultipleInvalid as ex:
                         _LOGGER.error(
                             "Error parsing light profile from %s: %s", profile_path, ex
@@ -322,7 +343,7 @@ class Profiles:
                         return None
             return profiles
 
-        cls._all = await hass.async_add_job(load_profile_data, hass)
+        cls._all = await hass.async_add_executor_job(load_profile_data, hass)
         return cls._all is not None
 
     @classmethod
@@ -421,7 +442,6 @@ class LightEntity(ToggleEntity):
             data[ATTR_COLOR_TEMP] = self.color_temp
 
         if supported_features & SUPPORT_COLOR and self.hs_color:
-            # pylint: disable=unsubscriptable-object,not-an-iterable
             hs_color = self.hs_color
             data[ATTR_HS_COLOR] = (round(hs_color[0], 3), round(hs_color[1], 3))
             data[ATTR_RGB_COLOR] = color_util.color_hs_to_RGB(*hs_color)
@@ -448,5 +468,6 @@ class Light(LightEntity):
         """Print deprecation warning."""
         super().__init_subclass__(**kwargs)
         _LOGGER.warning(
-            "Light is deprecated, modify %s to extend LightEntity", cls.__name__,
+            "Light is deprecated, modify %s to extend LightEntity",
+            cls.__name__,
         )
